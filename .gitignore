@@ -1,5 +1,5 @@
 .ipynb_checkpoints
 .__pycache__
 *.ipynb
-.data
-.kaggle_3m
+.brainMRI/data
+.brainMRI/kaggle_3m
