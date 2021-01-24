@@ -4,14 +4,14 @@ import h5py
 from skimage.io import imread
 from datetime import datetime
 
-from utils import preprocess_volume, preprocess_mask
+from .utils import preprocess_volume, preprocess_mask
 
 class BrainMRIDataset():
 
     IMG_SHAPE = (256, 256)
     CHANNELS = ["pre-contrast", "FLAIR", "post-contrast"]
 
-    def __init__(self, path='data/brainMRI.h5'):
+    def __init__(self, path="data/brainMRI.h5"):
         pass
 
     def __getitem__(self, index):
