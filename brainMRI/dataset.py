@@ -11,14 +11,60 @@ class Dataset():
     IMG_SHAPE = (256, 256)
     CHANNELS = ["pre-contrast", "FLAIR", "post-contrast"]
 
-    def __init__(self, path="data/brainMRI.h5"):
-        pass
+    def __init__(self, path="data/brainMRI.h5", train=True, volume=None):
+
+        if not os.path.exists(path):
+            raise RuntimeError("Dataset not found at '{}'.\nUse Dataset.make_dataset() to create it.".format(path))
+
+        assert volume in [None,] + Dataset.CHANNELS, 'volume can only be None or one of {}'.format(Dataset.CHANNELS)
+
+        self.dataset = h5py.File(path, 'r')
+        self.volume = volume
+        
+        self.index_vector = np.arange(self.dataset['images'].shape[0])
+        patients = np.unique(self.patients)
+        data_patients = np.random.choice(
+            patients, 
+            size=int((0.8 if train else 0.2) * len(patients)), 
+            replace=False
+        )
+        bool_vector = np.zeros_like(self.index_vector)
+        for patient in data_patients:
+            bool_vector = bool_vector + np.array(self.patients == patient)
+        self.index_vector = np.where(bool_vector)[0]
 
     def __getitem__(self, index):
-        pass
+        index = self.index_vector[index]
+
+        img = self.dataset['images'][index].astype(np.float32)
+        mask = self.dataset['masks'][index]
+        patient = self.dataset['patients'][index]
+        slice = self.dataset['slices'][index]
+
+        if self.volume is not None:
+            img = img[..., self.CHANNELS.index(self.volume)]
+            img = img[..., np.newaxis]
+
+        return img, mask, (patient, slice)
 
     def __len__(self):
-        pass
+        return len(self.index_vector)
+
+    @property
+    def images(self):
+        return self.dataset["images"][self.index_vector]
+
+    @property
+    def masks(self):
+        return self.dataset["masks"][self.index_vector]
+
+    @property
+    def patients(self):
+        return self.dataset["patients"][self.index_vector]
+
+    @property
+    def slices(self):
+        return self.dataset["slices"][self.index_vector]
 
     @staticmethod
     def make_dataset(raw_data_dir='./kaggle_3m', data_dir='./data'):
