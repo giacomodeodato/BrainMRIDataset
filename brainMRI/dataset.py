@@ -7,16 +7,44 @@ from datetime import datetime
 from .utils import preprocess_volume, preprocess_mask
 
 class Dataset():
+    """
+    TCGA-LGG dataset of brain MRIs for Lower Grade Glioma segmentation.
+
+    Attributes:
+        IMG_SHAPE : tuple
+            Shape of the images: (H, W).
+        VOLUMES : list
+            Names of the volumes.
+
+    Methods:
+        make_dataset(raw_data_dir='./kaggle_3m', data_dir='./data')
+            Creates a virtual HDF5 dataset with preprocessed images and metadata.
+    """
 
     IMG_SHAPE = (256, 256)
-    CHANNELS = ["pre-contrast", "FLAIR", "post-contrast"]
+    VOLUMES = ["pre-contrast", "FLAIR", "post-contrast"]
 
-    def __init__(self, path="data/brainMRI.h5", train=True, volume=None):
+    def __init__(self, path="./data/brainMRI.h5", train=True, volume=None):
+        """Initializes the brain MRI dataset.
+            
+        Args:
+            path : str, optional
+                Path to the virtual HDF5 dataset.
+                Default is './data/brainMRI.h5'.
+            train : bool, optional
+                Slice of the dataset to select.
+                Default is True, selects 80% of the patients.
+            volume : str, optional.
+                Volume images to return.
+                Default is None, returns all the volumes.
+
+        Returns: instance of the brain MRI dataset
+        """
 
         if not os.path.exists(path):
             raise RuntimeError("Dataset not found at '{}'.\nUse Dataset.make_dataset() to create it.".format(path))
 
-        assert volume in [None,] + Dataset.CHANNELS, 'volume can only be None or one of {}'.format(Dataset.CHANNELS)
+        assert volume in [None,] + Dataset.VOLUMES, 'volume can only be None or one of {}'.format(Dataset.VOLUMES)
 
         self.dataset = h5py.File(path, 'r')
         self.volume = volume
@@ -42,7 +70,7 @@ class Dataset():
         slice = self.dataset['slices'][index]
 
         if self.volume is not None:
-            img = img[..., self.CHANNELS.index(self.volume)]
+            img = img[..., self.VOLUMES.index(self.volume)]
             img = img[..., np.newaxis]
 
         return img, mask, (patient, slice)
@@ -68,15 +96,28 @@ class Dataset():
 
     @staticmethod
     def make_dataset(raw_data_dir='./kaggle_3m', data_dir='./data'):
+        """Creates a virtual HDF5 dataset with preprocessed images and metadata.
+        
+        Data should be previously downloaded from https://www.kaggle.com/mateuszbuda/lgg-mri-segmentation.
 
+        Args:
+            raw_data_dir : str, optional
+                Path to the raw data directory.
+            data_dir : str, optional
+                Path to the processed data directory.
+        """
+
+        # check data directories
         if not os.path.exists(raw_data_dir):
             print('{} does not exist.\n You can download raw data at https://www.kaggle.com/mateuszbuda/lgg-mri-segmentation'.format(
                 raw_data_dir
             ))
             raise OSError
-        
         if not os.path.exists(data_dir):
             os.mkdir(data_dir)
+        h5_dir = os.path.join(data_dir, 'hdf5')
+        if not os.path.exists(h5_dir):
+            os.mkdir(h5_dir)
             
         patient_dirs = [
             d
@@ -88,8 +129,9 @@ class Dataset():
 
         n_samples = 0
         for patient_dir in patient_dirs:
-            dir_path = os.path.join(raw_data_dir, patient_dir)
             
+            # retrieve patient images and masks
+            dir_path = os.path.join(raw_data_dir, patient_dir)
             img_names = [
                 x
                 for x in os.listdir(dir_path)
@@ -100,7 +142,7 @@ class Dataset():
             )
             n_slices = len(img_names)
             n_samples += n_slices
-            images = np.empty((n_slices, *Dataset.IMG_SHAPE, len(Dataset.CHANNELS)), dtype=np.uint8)
+            images = np.empty((n_slices, *Dataset.IMG_SHAPE, len(Dataset.VOLUMES)), dtype=np.uint8)
             masks = np.empty((n_slices, *Dataset.IMG_SHAPE), dtype=np.uint8)
             for i, name in enumerate(img_names):
                 img_path = os.path.join(dir_path, name)
@@ -110,6 +152,7 @@ class Dataset():
                 images[i] = imread(img_path)
                 masks[i] = imread(mask_path)
             
+            # preprocess images and metadata
             images = preprocess_volume(images)
             masks = preprocess_mask(masks)
             patient = np.array(("_".join(patient_dir.split("_")[:-1]),)*n_slices)
@@ -118,10 +161,7 @@ class Dataset():
                 for x in img_names
             ], dtype=np.uint8)
 
-            h5_dir = os.path.join(data_dir, 'h5py')
-            if not os.path.exists(h5_dir):
-                os.mkdir(h5_dir)
-
+            # create patient dataset
             h5_file_path = os.path.join(h5_dir, patient_dir + '.h5')
             with h5py.File(h5_file_path, 'w') as h5_file:
                 h5_file.attrs['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -134,7 +174,7 @@ class Dataset():
         # create virtual layouts
         layouts = {
             "images": h5py.VirtualLayout(
-                shape=(n_samples, *Dataset.IMG_SHAPE, len(Dataset.CHANNELS)), 
+                shape=(n_samples, *Dataset.IMG_SHAPE, len(Dataset.VOLUMES)), 
                 dtype=np.float16
                 ),
             "masks": h5py.VirtualLayout(
