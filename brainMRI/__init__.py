@@ -1,1 +1,1 @@
-from .brainMRI import BrainMRIDataset
+from .dataset import Dataset
