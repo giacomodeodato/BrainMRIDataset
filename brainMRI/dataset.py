@@ -166,8 +166,8 @@ class Dataset():
             with h5py.File(h5_file_path, 'w') as h5_file:
                 h5_file.attrs['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 h5_file.attrs['info'] = h5py.version.info
-                h5_file.create_dataset("images", data=images)
-                h5_file.create_dataset("masks", data=masks)
+                h5_file.create_dataset("images", data=np.rollaxis(images, 2, 0))
+                h5_file.create_dataset("masks", data=np.rollaxis(masks[..., np.newaxis], 2, 0))
                 h5_file.create_dataset("patients", data=patient.astype(h5py.string_dtype(encoding='utf-8')))
                 h5_file.create_dataset("slices", data=slices)
 
