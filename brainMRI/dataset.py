@@ -3,6 +3,7 @@ import numpy as np
 import h5py
 from skimage.io import imread
 from datetime import datetime
+from tqdm.auto import tqdm
 
 from .utils import preprocess_volume, preprocess_mask
 
@@ -24,7 +25,7 @@ class Dataset():
     IMG_SHAPE = (256, 256)
     VOLUMES = ["pre-contrast", "FLAIR", "post-contrast"]
 
-    def __init__(self, path="./data/brainMRI.h5", train=True, volume=None):
+    def __init__(self, path="./data/brainMRI.h5", train=True, volume=None, seed=42):
         """Initializes the brain MRI dataset.
             
         Args:
@@ -37,6 +38,9 @@ class Dataset():
             volume : str, optional.
                 Volume images to return.
                 Default is None, returns all the volumes.
+            seed : int, optional.
+                Seed for the random number generator to split
+                the data into train and test sets.
 
         Returns: instance of the brain MRI dataset
         """
@@ -49,12 +53,14 @@ class Dataset():
         self.dataset = h5py.File(path, 'r')
         self.volume = volume
         
-        self.index_vector = np.arange(self.dataset['images'].shape[0])
+        self.index_vector = np.arange(len(self.dataset['slices']))
         patients = np.unique(self.patients)
-        data_patients = np.random.choice(
+        rng = np.random.default_rng(seed=seed)
+        data_patients = rng.choice(
             patients, 
             size=int((0.8 if train else 0.2) * len(patients)), 
-            replace=False
+            replace=False,
+            shuffle=False
         )
         bool_vector = np.zeros_like(self.index_vector)
         for patient in data_patients:
@@ -127,10 +133,13 @@ class Dataset():
             )
         ]
 
+        pbar = tqdm(total=len(patient_dirs), desc='Retrieving data', leave=False)
+
         n_samples = 0
         for patient_dir in patient_dirs:
             
             # retrieve patient images and masks
+            pbar.set_description(f'{patient_dir} [Retrieving data]')
             dir_path = os.path.join(raw_data_dir, patient_dir)
             img_names = [
                 x
@@ -153,6 +162,7 @@ class Dataset():
                 masks[i] = imread(mask_path)
             
             # preprocess images and metadata
+            pbar.set_description(f'{patient_dir} [Preprocessing data]')
             images = preprocess_volume(images)
             masks = preprocess_mask(masks)
             patient = np.array(("_".join(patient_dir.split("_")[:-1]),)*n_slices)
@@ -162,23 +172,27 @@ class Dataset():
             ], dtype=np.uint8)
 
             # create patient dataset
+            pbar.set_description(f'{patient_dir} [Saving data]')
             h5_file_path = os.path.join(h5_dir, patient_dir + '.h5')
             with h5py.File(h5_file_path, 'w') as h5_file:
                 h5_file.attrs['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 h5_file.attrs['info'] = h5py.version.info
-                h5_file.create_dataset("images", data=np.rollaxis(images, 2, 0))
-                h5_file.create_dataset("masks", data=np.rollaxis(masks[..., np.newaxis], 2, 0))
+                h5_file.create_dataset("images", data=np.moveaxis(images, 3, 1))
+                h5_file.create_dataset("masks", data=np.moveaxis(masks[..., np.newaxis], 3, 1))
                 h5_file.create_dataset("patients", data=patient.astype(h5py.string_dtype(encoding='utf-8')))
                 h5_file.create_dataset("slices", data=slices)
 
+            pbar.update(1)
+
         # create virtual layouts
+        pbar.set_description('Creating virtual dataset')
         layouts = {
             "images": h5py.VirtualLayout(
-                shape=(n_samples, *Dataset.IMG_SHAPE, len(Dataset.VOLUMES)), 
+                shape=(n_samples, len(Dataset.VOLUMES), *Dataset.IMG_SHAPE), 
                 dtype=np.float16
                 ),
             "masks": h5py.VirtualLayout(
-                shape=(n_samples, *Dataset.IMG_SHAPE), 
+                shape=(n_samples, 1, *Dataset.IMG_SHAPE), 
                 dtype=np.uint8
                 ),
             "patients": h5py.VirtualLayout(
@@ -211,3 +225,5 @@ class Dataset():
             h5_file.attrs['website'] = 'https://www.kaggle.com/mateuszbuda/lgg-mri-segmentation'
             for name, layout in layouts.items():
                 h5_file.create_virtual_dataset(name, layout)
+
+        pbar.close()
