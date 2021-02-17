@@ -76,8 +76,8 @@ class Dataset():
         slice = self.dataset['slices'][index]
 
         if self.volume is not None:
-            img = img[..., self.VOLUMES.index(self.volume)]
-            img = img[..., np.newaxis]
+            img = img[self.VOLUMES.index(self.volume)]
+            img = img[np.newaxis, ...]
 
         return img, mask, (patient, slice)
 
